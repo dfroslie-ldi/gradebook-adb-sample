@@ -16,12 +16,20 @@
 
 # COMMAND ----------
 
-# Set Spark context for the storage account and the base URI.
-spark.conf.set(
-    "fs.azure.account.key.marchmadstore.dfs.core.windows.net",
-    dbutils.secrets.get(scope="MarchMadnessScope", key="marchmadstore-key"))
+# Replace cooplakehoues with the name of your storage account.
+storage_end_point = "cooplakehouse.dfs.core.windows.net"
 
-uri = "abfss://datawranglingsample@marchmadstore.dfs.core.windows.net/"
+# Use the name of the secret scope that you set up along with the name of the secret in the key vault containing the storage account access key.
+my_scope = "coop-lakehouse-scope"
+my_key = "cooplakehouse-key"
+
+spark.conf.set(
+    "fs.azure.account.key." + storage_end_point,
+    dbutils.secrets.get(scope=my_scope, key=my_key)
+)
+
+# Replace the container name (lakehouseblogstore) and storage account name (cooplakehouse) in the uri.
+uri = "abfss://lakehouseblobstore@cooplakehouse.dfs.core.windows.net/TrainingFiles/"
 
 # COMMAND ----------
 
@@ -35,7 +43,7 @@ uri = "abfss://datawranglingsample@marchmadstore.dfs.core.windows.net/"
 # COMMAND ----------
 
 # Read the Grades file using defaults and use the top row as header (not the default behavior)
-grades_df = spark.read.csv(uri+"data/Grades.csv", header=True)
+grades_df = spark.read.csv(uri+"Grades", header=True)
  
 display(grades_df)
 
@@ -63,7 +71,7 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 schema = StructType([StructField("StudentID", IntegerType(), True), \
                     StructField("Major", StringType(), True), \
                     StructField("HomeState", StringType(), True) ])
-students_df = spark.read.options(delimiter=',', header=True).schema(schema).csv(uri+"data/StudentInfo.csv")
+students_df = spark.read.options(delimiter=',', header=True).schema(schema).csv(uri+"StudentInfo.csv")
 
 display(students_df)
 
@@ -169,7 +177,7 @@ schema = StructType([StructField("Item", StringType(), True), \
                     StructField("Type", StringType(), True), \
                     StructField("TotalPoints", IntegerType(), True), \
                     StructField("Topic", StringType(), True)])
-items_df = spark.read.options(delimiter=',', header=True).schema(schema).csv(uri+"data/Items.csv")
+items_df = spark.read.options(delimiter=',', header=True).schema(schema).csv(uri+"Items.csv")
 
 display(items_df)
 
@@ -253,21 +261,21 @@ display(grades_special_long_df)
 
 # COMMAND ----------
 
-# Now that we're in long format, we can join with the items detail.
-# We'll use a left outer join to ensure we don't miss any Item.
-
-grades_special_scores_df = grades_special_long_df.join(items_df, on='Item', how='leftouter')
-
-display(grades_special_scores_df)
-
-# COMMAND ----------
-
 # Now let's create the Score column.  We need a function to do that in PySpark.  Fortunately, it is a very simple function.
 def get_specialevent_score(grade, total_points) -> int:
     if grade=="P":
         return(total_points)
     else:
         return(0)
+
+# COMMAND ----------
+
+# Now that we're in long format, we can join with the items detail.
+# We'll use a left outer join to ensure we don't miss any Item.
+
+grades_special_scores_df = grades_special_long_df.join(items_df, on='Item', how='leftouter')
+
+display(grades_special_scores_df)
 
 # COMMAND ----------
 
@@ -326,14 +334,10 @@ print(grades_df.count() * (len(grades_df.columns)-1))
 
 # COMMAND ----------
 
-# coalesce(1) forces a single file (and a single thread)
-all_long_df.coalesce(1).write.option('header',True).mode('overwrite').csv(uri+"output/CSVLong")
-all_long_df.coalesce(1).write.option('header',True).mode('overwrite').parquet(uri+"output/ParquetLong")
+all_long_df.write.option('header',True).mode('overwrite').csv(uri+"Scratch/CSVLong")
+all_long_df.write.format('parquet').mode('overwrite').save(uri+"Scratch/ParquetLong")
+all_long_df.write.format('delta').mode('overwrite').save(uri+"Scratch/DeltaLong")
 
-
-# COMMAND ----------
-
-all_long_df.write.format("delta").mode('overwrite').save(uri+"output/DeltaLong")
 
 # COMMAND ----------
 
